@@ -2,83 +2,229 @@
 <html lang="id">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AR Food Expiry Visualizer — Tambah Produk</title>
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0"
+    />
+    <meta name="theme-color" content="#0f172a" />
+    <title>Tambah Produk — AR Food Expiry</title>
     <link rel="stylesheet" href="css/style.css" />
   </head>
   <body>
-    <div class="terminal-frame">
-      <header class="topbar">
-        <div class="brand">[ AR_FOOD_EXPIRY ]</div>
-        <div class="topbar-actions">
-          <a href="index.html" class="btn btn-ghost">← KEMBALI</a>
-        </div>
+    <div class="app-container">
+      <!-- Header -->
+      <header class="app-header">
+        <button class="btn-back" id="btnBack">←</button>
+        <h1 id="pageTitle">Tambah Produk</h1>
+        <span class="header-icon">🥫</span>
       </header>
 
-      <main class="panel panel-narrow">
-        <div class="panel-header">
-          <span id="formTitle">TAMBAH_PRODUK</span>
-        </div>
+      <main class="main-content">
+        <div class="form-card">
+          <div class="form-group">
+            <label for="namaProduk">Nama Produk</label>
+            <input
+              type="text"
+              id="namaProduk"
+              placeholder="Contoh: Susu UHT, Roti Tawar..."
+              maxlength="60"
+              autocomplete="off"
+              required
+            />
+          </div>
 
-        <form id="productForm" class="terminal-form">
-          <input type="hidden" id="productId" />
+          <div class="form-group">
+            <label for="tanggalPembelian">Tanggal Pembelian</label>
+            <input type="date" id="tanggalPembelian" required />
+          </div>
 
-          <label for="namaProduk">NAMA_PRODUK</label>
-          <input type="text" id="namaProduk" required placeholder="Susu UHT" />
+          <div class="form-group">
+            <label for="masaSimpan">Masa Simpan (hari)</label>
+            <input
+              type="number"
+              id="masaSimpan"
+              placeholder="Contoh: 7"
+              min="1"
+              max="3650"
+              required
+            />
+            <span class="form-hint"
+              >Lihat petunjuk penyimpanan di kemasan produk.</span
+            >
+          </div>
 
-          <label for="tanggalPembelian">TANGGAL_PEMBELIAN</label>
-          <input type="date" id="tanggalPembelian" required />
-
-          <label for="masaSimpan">MASA_SIMPAN (HARI)</label>
-          <input
-            type="number"
-            id="masaSimpan"
-            min="1"
-            required
-            placeholder="7"
-          />
+          <div class="form-group">
+            <label for="statusManual">Override Status (opsional)</label>
+            <select id="statusManual">
+              <option value="">— Hitung otomatis —</option>
+              <option value="fresh">✅ Fresh</option>
+              <option value="consume-soon">⚠️ Consume Soon</option>
+              <option value="critical">🚨 Critical</option>
+              <option value="expired">💀 Expired</option>
+            </select>
+            <span class="form-hint"
+              >Kosongkan untuk kalkulasi otomatis berdasarkan tanggal.</span
+            >
+          </div>
 
           <div class="form-actions">
-            <button type="submit" class="btn btn-primary">SIMPAN</button>
-            <a href="index.html" class="btn btn-ghost">BATAL</a>
+            <button class="btn btn-secondary" id="btnCancel" type="button">
+              Batal
+            </button>
+            <button class="btn btn-primary" id="btnSave" type="button">
+              💾 Simpan
+            </button>
           </div>
-        </form>
+        </div>
+
+        <!-- Marker Preview (shown after save) -->
+        <div id="markerPreviewSection" style="display: none; margin-top: 20px">
+          <p class="section-heading" style="margin-bottom: 12px">
+            Marker Berhasil Dibuat
+          </p>
+          <div class="marker-preview-card">
+            <h3>Cetak & tempel ke produk Anda</h3>
+            <canvas id="generatedMarker" width="300" height="300"></canvas>
+            <p class="marker-id-display">
+              Marker ID: <span id="generatedMarkerId"></span>
+            </p>
+            <button
+              class="btn btn-primary"
+              id="btnDownloadNewMarker"
+              style="margin-top: 14px; width: 100%"
+            >
+              ⬇️ Download Marker
+            </button>
+            <a
+              href="index.html"
+              class="btn btn-secondary"
+              style="margin-top: 8px; width: 100%; display: flex"
+            >
+              ← Kembali ke Dashboard
+            </a>
+          </div>
+        </div>
       </main>
     </div>
 
+    <!-- Toast -->
+    <div class="toast-container" id="toastContainer"></div>
+
     <script src="js/storage.js"></script>
+    <script src="js/expiry.js"></script>
+    <script src="js/marker.js"></script>
     <script>
-      const params = new URLSearchParams(window.location.search);
-      const editId = params.get("id");
+      document.addEventListener("DOMContentLoaded", () => {
+        // ─── State ─────────────────────────────────────────────────
+        const params = new URLSearchParams(window.location.search);
+        const editId = params.get("edit");
+        const isEdit = Boolean(editId);
 
-      if (editId) {
-        const product = ProductStorage.getProductById(editId);
-        if (product) {
-          document.getElementById("formTitle").textContent = "EDIT_PRODUK";
-          document.getElementById("productId").value = product.id;
-          document.getElementById("namaProduk").value = product.namaProduk;
-          document.getElementById("tanggalPembelian").value =
-            product.tanggalPembelian;
-          document.getElementById("masaSimpan").value = product.masaSimpan;
-        }
-      }
+        // ─── DOM ───────────────────────────────────────────────────
+        const pageTitle = document.getElementById("pageTitle");
+        const namaProduk = document.getElementById("namaProduk");
+        const tglBeli = document.getElementById("tanggalPembelian");
+        const masaSimpan = document.getElementById("masaSimpan");
+        const statusM = document.getElementById("statusManual");
+        const btnSave = document.getElementById("btnSave");
+        const btnCancel = document.getElementById("btnCancel");
+        const btnBack = document.getElementById("btnBack");
+        const toastCont = document.getElementById("toastContainer");
 
-      document.getElementById("productForm").addEventListener("submit", (e) => {
-        e.preventDefault();
-        const data = {
-          namaProduk: document.getElementById("namaProduk").value.trim(),
-          tanggalPembelian: document.getElementById("tanggalPembelian").value,
-          masaSimpan: Number(document.getElementById("masaSimpan").value),
-          statusManual: "",
-        };
+        const markerSection = document.getElementById("markerPreviewSection");
+        const markerCanvas = document.getElementById("generatedMarker");
+        const markerIdEl = document.getElementById("generatedMarkerId");
+        const btnDlMarker = document.getElementById("btnDownloadNewMarker");
 
-        const id = document.getElementById("productId").value;
-        if (id) {
-          ProductStorage.updateProduct(id, data);
+        // ─── Populate on Edit ──────────────────────────────────────
+        if (isEdit) {
+          pageTitle.textContent = "Edit Produk";
+          const p = Storage.getById(editId);
+          if (p) {
+            namaProduk.value = p.namaProduk;
+            tglBeli.value = p.tanggalPembelian;
+            masaSimpan.value = p.masaSimpan;
+            statusM.value = p.statusManual || "";
+          } else {
+            showToast("Produk tidak ditemukan", "error");
+            setTimeout(() => (window.location.href = "index.html"), 1500);
+          }
         } else {
-          ProductStorage.addProduct(data);
+          // Default purchase date to today
+          tglBeli.value = new Date().toISOString().split("T")[0];
         }
-        window.location.href = "index.html";
+
+        // ─── Save Handler ──────────────────────────────────────────
+        btnSave.addEventListener("click", () => {
+          // Validate
+          if (!namaProduk.value.trim()) {
+            showToast("Nama produk wajib diisi", "error");
+            namaProduk.focus();
+            return;
+          }
+          if (!tglBeli.value) {
+            showToast("Tanggal pembelian wajib diisi", "error");
+            tglBeli.focus();
+            return;
+          }
+          if (!masaSimpan.value || parseInt(masaSimpan.value) < 1) {
+            showToast("Masa simpan minimal 1 hari", "error");
+            masaSimpan.focus();
+            return;
+          }
+
+          const data = {
+            namaProduk: namaProduk.value,
+            tanggalPembelian: tglBeli.value,
+            masaSimpan: masaSimpan.value,
+            statusManual: statusM.value,
+          };
+
+          let saved;
+          if (isEdit) {
+            saved = Storage.update(editId, data);
+            showToast("Produk diperbarui ✓", "success");
+            setTimeout(() => (window.location.href = "index.html"), 1200);
+          } else {
+            saved = Storage.add(data);
+            showToast("Produk disimpan ✓", "success");
+            // Show marker preview
+            showMarkerPreview(saved.markerId);
+            btnSave.disabled = true;
+          }
+        });
+
+        // ─── Marker Preview ────────────────────────────────────────
+        function showMarkerPreview(markerId) {
+          Marker.generate(markerId, markerCanvas);
+          markerIdEl.textContent = markerId;
+          markerSection.style.display = "block";
+          markerSection.scrollIntoView({behavior: "smooth", block: "start"});
+
+          btnDlMarker.addEventListener("click", () => {
+            Marker.download(markerCanvas, markerId);
+            showToast("Marker diunduh!", "success");
+          });
+        }
+
+        // ─── Navigation ────────────────────────────────────────────
+        btnCancel.addEventListener(
+          "click",
+          () => (window.location.href = "index.html"),
+        );
+        btnBack.addEventListener(
+          "click",
+          () => (window.location.href = "index.html"),
+        );
+
+        // ─── Toast ─────────────────────────────────────────────────
+        function showToast(message, type = "success") {
+          const toast = document.createElement("div");
+          toast.className = `toast ${type}`;
+          toast.textContent = message;
+          toastCont.appendChild(toast);
+          setTimeout(() => toast.remove(), 3000);
+        }
       });
     </script>
   </body>

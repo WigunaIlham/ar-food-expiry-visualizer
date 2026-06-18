@@ -2,66 +2,101 @@
 <html lang="id">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AR Food Expiry Visualizer — Dashboard</title>
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0"
+    />
+    <meta name="theme-color" content="#0f172a" />
+    <title>AR Food Expiry Visualizer</title>
     <link rel="stylesheet" href="css/style.css" />
   </head>
   <body>
-    <div class="terminal-frame">
-      <header class="topbar">
-        <div class="brand">[ AR_FOOD_EXPIRY ]</div>
-        <div class="topbar-actions">
-          <a href="add-product.html" class="btn btn-primary">+ TAMBAH PRODUK</a>
-          <a href="scanner.html" class="btn btn-ghost" id="arScannerBtn"
-            >► BUKA KAMERA AR</a
-          >
-        </div>
+    <div class="app-container">
+      <!-- Header -->
+      <header class="app-header">
+        <h1>🧊 Food Expiry AR</h1>
+        <a href="scanner.html" class="btn btn-ar btn-sm">📷 Scan AR</a>
       </header>
 
-      <main class="panel">
-        <div class="panel-header">
-          <span>DAFTAR_PRODUK</span>
-          <span id="productCount" class="count-badge">0 ITEMS</span>
-        </div>
-
-        <div class="table-wrap">
-          <table id="productTable">
-            <thead>
-              <tr>
-                <th>MARKER_ID</th>
-                <th>NAMA_PRODUK</th>
-                <th>TGL_BELI</th>
-                <th>MASA_SIMPAN</th>
-                <th>STATUS</th>
-                <th>SISA_HARI</th>
-                <th>ACTIONS</th>
-              </tr>
-            </thead>
-            <tbody id="productTableBody"></tbody>
-          </table>
-          <div id="emptyState" class="empty-state" hidden>
-            <p>:: NO_DATA ::</p>
-            <p>Belum ada produk. Tambahkan produk untuk mulai tracking.</p>
+      <!-- Main -->
+      <main class="main-content">
+        <!-- Stats -->
+        <div class="stats-bar">
+          <div class="stat-card fresh">
+            <div class="stat-num" id="statFresh">0</div>
+            <div class="stat-label">Fresh</div>
+          </div>
+          <div class="stat-card soon">
+            <div class="stat-num" id="statSoon">0</div>
+            <div class="stat-label">Segera</div>
+          </div>
+          <div class="stat-card critical">
+            <div class="stat-num" id="statCritical">0</div>
+            <div class="stat-label">Kritis</div>
+          </div>
+          <div class="stat-card expired">
+            <div class="stat-num" id="statExpired">0</div>
+            <div class="stat-label">Expired</div>
           </div>
         </div>
-      </main>
 
-      <footer class="statusbar">
-        <span>STORAGE: LOCAL</span>
-        <span id="clock"></span>
-      </footer>
+        <!-- Actions -->
+        <div class="action-bar">
+          <a href="add-product.html" class="btn btn-primary">
+            ➕ Tambah Produk
+          </a>
+          <a href="scanner.html" class="btn btn-ar"> 📷 Buka Kamera AR </a>
+        </div>
+
+        <!-- Product List -->
+        <p class="section-heading">Daftar Produk</p>
+        <div class="product-list" id="productList">
+          <!-- Rendered by app.js -->
+        </div>
+      </main>
     </div>
 
-    <div id="markerModal" class="modal" hidden>
-      <div class="modal-box">
-        <div class="modal-header">
-          <span>MARKER_INFO</span>
-          <button id="closeModal" class="btn-icon">×</button>
+    <!-- Delete Confirm Modal -->
+    <div class="modal-overlay" id="deleteModal">
+      <div class="modal">
+        <h2>🗑️ Hapus Produk?</h2>
+        <p>
+          Produk "<strong id="deleteModalName"></strong>" akan dihapus secara
+          permanen.
+        </p>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" id="btnCancelDelete">Batal</button>
+          <button class="btn btn-danger" id="btnConfirmDelete">Hapus</button>
         </div>
-        <div class="modal-body" id="markerModalBody"></div>
       </div>
     </div>
 
+    <!-- Marker Preview Modal -->
+    <div class="modal-overlay" id="markerModal">
+      <div class="modal" style="text-align: center; gap: 12px">
+        <h2>🏷️ Marker Produk</h2>
+        <p
+          id="markerNameDisplay"
+          style="font-size: 15px; font-weight: 600; color: var(--text)"
+        ></p>
+        <canvas id="markerCanvas" width="300" height="300"></canvas>
+        <p class="marker-id-display">ID: <span id="markerIdDisplay"></span></p>
+        <p style="font-size: 12px; color: var(--text-muted)">
+          Download dan cetak marker ini, lalu tempel ke produk Anda.
+        </p>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" id="btnCloseMarker">Tutup</button>
+          <button class="btn btn-primary" id="btnDownloadMarker">
+            ⬇️ Download
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Scripts (order matters) -->
     <script src="js/storage.js"></script>
     <script src="js/expiry.js"></script>
     <script src="js/marker.js"></script>

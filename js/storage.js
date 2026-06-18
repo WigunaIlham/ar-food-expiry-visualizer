@@ -1,52 +1,108 @@
-const STORAGE_KEY = "arfood_products_v1";
+/**
+ * storage.js
+ * Handles all LocalStorage operations for product data.
+ */
 
-function getProducts() {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) return [];
-  try {
-    return JSON.parse(raw);
-  } catch (e) {
-    console.error("Storage corrupt, resetting.", e);
-    return [];
-  }
-}
+const STORAGE_KEY = "ar_food_products";
 
-function saveProducts(products) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(products));
-}
+const Storage = {
+  /**
+   * Retrieve all products from LocalStorage.
+   * @returns {Array} Array of product objects.
+   */
+  getAll() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  },
 
-function addProduct(product) {
-  const products = getProducts();
-  product.id = "P" + Date.now().toString(36).toUpperCase();
-  product.markerId = "";
-  products.push(product);
-  saveProducts(products);
-  return product;
-}
+  /**
+   * Save entire products array to LocalStorage.
+   * @param {Array} products
+   */
+  saveAll(products) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(products));
+  },
 
-function updateProduct(id, updates) {
-  const products = getProducts();
-  const idx = products.findIndex((p) => p.id === id);
-  if (idx === -1) return null;
-  products[idx] = {...products[idx], ...updates};
-  saveProducts(products);
-  return products[idx];
-}
+  /**
+   * Get a single product by markerId.
+   * @param {string} markerId
+   * @returns {Object|null}
+   */
+  getById(markerId) {
+    return this.getAll().find((p) => p.markerId === markerId) || null;
+  },
 
-function deleteProduct(id) {
-  const products = getProducts().filter((p) => p.id !== id);
-  saveProducts(products);
-}
+  /**
+   * Add a new product. Auto-generates markerId.
+   * @param {Object} productData - { namaProduk, tanggalPembelian, masaSimpan, statusManual }
+   * @returns {Object} The saved product with markerId.
+   */
+  add(productData) {
+    const products = this.getAll();
+    const markerId = this._generateMarkerId(products);
+    const product = {
+      markerId,
+      namaProduk: productData.namaProduk.trim(),
+      tanggalPembelian: productData.tanggalPembelian,
+      masaSimpan: parseInt(productData.masaSimpan, 10),
+      statusManual: productData.statusManual || "",
+      createdAt: new Date().toISOString(),
+    };
+    products.push(product);
+    this.saveAll(products);
+    return product;
+  },
 
-function getProductById(id) {
-  return getProducts().find((p) => p.id === id) || null;
-}
+  /**
+   * Update an existing product by markerId.
+   * @param {string} markerId
+   * @param {Object} updates
+   * @returns {Object|null} Updated product or null if not found.
+   */
+  update(markerId, updates) {
+    const products = this.getAll();
+    const idx = products.findIndex((p) => p.markerId === markerId);
+    if (idx === -1) return null;
+    products[idx] = {
+      ...products[idx],
+      namaProduk: updates.namaProduk?.trim() ?? products[idx].namaProduk,
+      tanggalPembelian:
+        updates.tanggalPembelian ?? products[idx].tanggalPembelian,
+      masaSimpan: parseInt(updates.masaSimpan, 10) ?? products[idx].masaSimpan,
+      statusManual: updates.statusManual ?? products[idx].statusManual,
+      updatedAt: new Date().toISOString(),
+    };
+    this.saveAll(products);
+    return products[idx];
+  },
 
-window.ProductStorage = {
-  getProducts,
-  saveProducts,
-  addProduct,
-  updateProduct,
-  deleteProduct,
-  getProductById,
+  /**
+   * Delete a product by markerId.
+   * @param {string} markerId
+   * @returns {boolean} True if deleted.
+   */
+  delete(markerId) {
+    const products = this.getAll();
+    const filtered = products.filter((p) => p.markerId !== markerId);
+    if (filtered.length === products.length) return false;
+    this.saveAll(filtered);
+    return true;
+  },
+
+  /**
+   * Generate next sequential markerId like M001, M002, ...
+   * @private
+   */
+  _generateMarkerId(products) {
+    if (products.length === 0) return "M001";
+    const nums = products
+      .map((p) => parseInt(p.markerId.replace("M", ""), 10))
+      .filter((n) => !isNaN(n));
+    const max = Math.max(...nums);
+    return "M" + String(max + 1).padStart(3, "0");
+  },
 };
