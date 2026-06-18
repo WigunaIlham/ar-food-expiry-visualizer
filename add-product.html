@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AR Food Expiry Visualizer — Tambah Produk</title>
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body>
+    <div class="terminal-frame">
+      <header class="topbar">
+        <div class="brand">[ AR_FOOD_EXPIRY ]</div>
+        <div class="topbar-actions">
+          <a href="index.html" class="btn btn-ghost">← KEMBALI</a>
+        </div>
+      </header>
+
+      <main class="panel panel-narrow">
+        <div class="panel-header">
+          <span id="formTitle">TAMBAH_PRODUK</span>
+        </div>
+
+        <form id="productForm" class="terminal-form">
+          <input type="hidden" id="productId" />
+
+          <label for="namaProduk">NAMA_PRODUK</label>
+          <input type="text" id="namaProduk" required placeholder="Susu UHT" />
+
+          <label for="tanggalPembelian">TANGGAL_PEMBELIAN</label>
+          <input type="date" id="tanggalPembelian" required />
+
+          <label for="masaSimpan">MASA_SIMPAN (HARI)</label>
+          <input
+            type="number"
+            id="masaSimpan"
+            min="1"
+            required
+            placeholder="7"
+          />
+
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">SIMPAN</button>
+            <a href="index.html" class="btn btn-ghost">BATAL</a>
+          </div>
+        </form>
+      </main>
+    </div>
+
+    <script src="js/storage.js"></script>
+    <script>
+      const params = new URLSearchParams(window.location.search);
+      const editId = params.get("id");
+
+      if (editId) {
+        const product = ProductStorage.getProductById(editId);
+        if (product) {
+          document.getElementById("formTitle").textContent = "EDIT_PRODUK";
+          document.getElementById("productId").value = product.id;
+          document.getElementById("namaProduk").value = product.namaProduk;
+          document.getElementById("tanggalPembelian").value =
+            product.tanggalPembelian;
+          document.getElementById("masaSimpan").value = product.masaSimpan;
+        }
+      }
+
+      document.getElementById("productForm").addEventListener("submit", (e) => {
+        e.preventDefault();
+        const data = {
+          namaProduk: document.getElementById("namaProduk").value.trim(),
+          tanggalPembelian: document.getElementById("tanggalPembelian").value,
+          masaSimpan: Number(document.getElementById("masaSimpan").value),
+          statusManual: "",
+        };
+
+        const id = document.getElementById("productId").value;
+        if (id) {
+          ProductStorage.updateProduct(id, data);
+        } else {
+          ProductStorage.addProduct(data);
+        }
+        window.location.href = "index.html";
+      });
+    </script>
+  </body>
+</html>
