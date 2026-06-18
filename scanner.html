@@ -10,55 +10,88 @@
     <meta name="theme-color" content="#000000" />
     <title>AR Scanner — Food Expiry</title>
 
-    <!-- A-Frame -->
-    <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
-
-    <!-- AR.js for A-Frame (marker tracking) -->
-    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
-
-    <link rel="stylesheet" href="css/style.css" />
+    <!--
+    PENTING: Urutan script ini WAJIB:
+    1. A-Frame dulu
+    2. Baru AR.js
+    Jangan dibalik.
+  -->
+    <script src="https://cdn.jsdelivr.net/npm/aframe@1.4.2/dist/aframe.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/ar.js@2.2.2/aframe/build/aframe-ar.min.js"></script>
 
     <style>
-      /* Scanner-specific overrides */
-
-      body {
+      * {
         margin: 0;
-        overflow: hidden;
-        background: #000;
+        padding: 0;
+        box-sizing: border-box;
       }
 
-      /* A-Frame scene sits full-screen behind everything */
+      :root {
+        --fresh: #22c55e;
+        --consume-soon: #eab308;
+        --critical: #f97316;
+        --expired: #ef4444;
+      }
+
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #000;
+        font-family: "Segoe UI", system-ui, sans-serif;
+        color: #f1f5f9;
+      }
+
+      /* ── A-Frame Scene: full screen, behind everything ── */
       a-scene {
-        position: fixed;
-        inset: 0;
+        position: fixed !important;
+        top: 0;
+        left: 0;
+        width: 100% !important;
+        height: 100% !important;
         z-index: 0;
       }
 
-      /* All UI panels sit above the AR scene */
-      .scanner-ui {
+      /* Hide A-Frame default loader */
+      .a-loader-title {
+        display: none !important;
+      }
+      .a-orientation-modal {
+        display: none !important;
+      }
+
+      /* ── UI Overlay ── */
+      #ui-overlay {
         position: fixed;
-        inset: 0;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
         z-index: 10;
-        pointer-events: none; /* Let touches pass through to camera */
         display: flex;
         flex-direction: column;
+        pointer-events: none;
       }
 
       /* ── Top Bar ── */
-      .scanner-topbar {
+      #top-bar {
         pointer-events: all;
-        background: linear-gradient(
-          to bottom,
-          rgba(0, 0, 0, 0.75),
-          transparent
-        );
-        padding: 12px 16px 20px;
         display: flex;
         align-items: center;
         gap: 10px;
+        padding: 12px 14px;
+        background: linear-gradient(
+          to bottom,
+          rgba(0, 0, 0, 0.8) 0%,
+          transparent 100%
+        );
       }
 
-      .btn-back-scanner {
+      #btn-back {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
         background: rgba(255, 255, 255, 0.15);
         border: 1px solid rgba(255, 255, 255, 0.25);
         color: #fff;
@@ -68,37 +101,34 @@
         font-weight: 600;
         cursor: pointer;
         text-decoration: none;
-        display: flex;
-        align-items: center;
-        gap: 6px;
         backdrop-filter: blur(8px);
         -webkit-backdrop-filter: blur(8px);
       }
 
-      .scanner-title {
-        color: #fff;
+      #top-title {
+        flex: 1;
         font-size: 15px;
         font-weight: 700;
-        flex: 1;
-        text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+        color: #fff;
+        text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
       }
 
-      /* ── Product Selector Bar ── */
-      .selector-bar {
+      /* ── Selector Bar ── */
+      #selector-bar {
         pointer-events: all;
-        margin: 0 12px;
-        background: rgba(15, 23, 42, 0.88);
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
+        margin: 0 12px 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: rgba(15, 23, 42, 0.85);
         border: 1px solid rgba(255, 255, 255, 0.12);
         border-radius: 12px;
         padding: 10px 12px;
-        display: flex;
-        gap: 8px;
-        align-items: center;
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
       }
 
-      .selector-bar select {
+      #select-product {
         flex: 1;
         background: transparent;
         border: none;
@@ -110,12 +140,13 @@
         cursor: pointer;
       }
 
-      .selector-bar select option {
+      #select-product option {
         background: #1e293b;
         color: #f1f5f9;
       }
 
-      .btn-refresh {
+      #btn-refresh {
+        pointer-events: all;
         background: rgba(255, 255, 255, 0.1);
         border: 1px solid rgba(255, 255, 255, 0.2);
         color: #fff;
@@ -123,150 +154,134 @@
         padding: 7px 10px;
         font-size: 16px;
         cursor: pointer;
-        pointer-events: all;
         flex-shrink: 0;
       }
 
-      /* ── Overlays (center area) ── */
-      .overlay-center {
+      /* ── Center Area ── */
+      #center-area {
         flex: 1;
         display: flex;
         align-items: center;
         justify-content: center;
         flex-direction: column;
-        gap: 12px;
-      }
-
-      .overlay-box {
-        display: none;
-        flex-direction: column;
-        align-items: center;
-        gap: 10px;
-        text-align: center;
+        gap: 14px;
         padding: 20px;
       }
 
-      .overlay-icon {
+      /* State overlays */
+      .state-panel {
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+        text-align: center;
+      }
+
+      .state-panel.active {
+        display: flex;
+      }
+
+      .state-icon {
         font-size: 52px;
-        filter: drop-shadow(0 0 12px rgba(255, 255, 255, 0.3));
+        filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.2));
       }
 
-      .overlay-title {
-        color: #fff;
-        font-size: 17px;
+      .state-title {
+        font-size: 18px;
         font-weight: 700;
-        text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+        color: #fff;
+        text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
       }
 
-      .overlay-sub {
-        color: rgba(255, 255, 255, 0.65);
+      .state-sub {
         font-size: 13px;
+        color: rgba(255, 255, 255, 0.6);
         max-width: 260px;
+        line-height: 1.5;
         text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
       }
 
       /* Scanning reticle */
-      .reticle {
-        width: 200px;
-        height: 200px;
+      #reticle-box {
+        width: 190px;
+        height: 190px;
         position: relative;
       }
 
-      .reticle::before,
-      .reticle::after {
-        content: "";
+      .corner {
         position: absolute;
-        inset: 0;
-        border: 3px solid rgba(99, 102, 241, 0.8);
-        border-radius: 12px;
-        animation: reticlePulse 1.8s ease-in-out infinite;
-      }
-
-      .reticle::after {
-        inset: 10px;
-        border-color: rgba(139, 92, 246, 0.5);
-        animation-delay: 0.4s;
-      }
-
-      .reticle-inner {
-        position: absolute;
-        inset: 20px;
-        border: 2px solid rgba(255, 255, 255, 0.4);
-        border-radius: 6px;
-      }
-
-      /* Corner marks */
-      .reticle-corners {
-        position: absolute;
-        inset: 0;
-      }
-
-      .reticle-corners span {
-        position: absolute;
-        width: 20px;
-        height: 20px;
-        border-color: #fff;
+        width: 22px;
+        height: 22px;
+        border-color: rgba(255, 255, 255, 0.9);
         border-style: solid;
       }
 
-      .reticle-corners span:nth-child(1) {
+      .corner.tl {
         top: 0;
         left: 0;
         border-width: 3px 0 0 3px;
         border-radius: 4px 0 0 0;
       }
-      .reticle-corners span:nth-child(2) {
+      .corner.tr {
         top: 0;
         right: 0;
         border-width: 3px 3px 0 0;
         border-radius: 0 4px 0 0;
       }
-      .reticle-corners span:nth-child(3) {
+      .corner.bl {
         bottom: 0;
         left: 0;
         border-width: 0 0 3px 3px;
         border-radius: 0 0 0 4px;
       }
-      .reticle-corners span:nth-child(4) {
+      .corner.br {
         bottom: 0;
         right: 0;
         border-width: 0 3px 3px 0;
         border-radius: 0 0 4px 0;
       }
 
-      @keyframes reticlePulse {
+      .reticle-pulse {
+        position: absolute;
+        inset: 12px;
+        border: 2px solid rgba(99, 102, 241, 0.7);
+        border-radius: 8px;
+        animation: pulse 1.8s ease-in-out infinite;
+      }
+
+      @keyframes pulse {
         0%,
         100% {
-          transform: scale(1);
           opacity: 1;
+          transform: scale(1);
         }
         50% {
-          transform: scale(1.06);
-          opacity: 0.5;
+          opacity: 0.4;
+          transform: scale(1.05);
         }
       }
 
       /* Detected ring */
-      .detected-ring {
-        width: 120px;
-        height: 120px;
+      #detected-ring {
+        width: 110px;
+        height: 110px;
         border-radius: 50%;
         border: 3px solid #22c55e;
-        animation: detectedPing 1s ease-in-out infinite;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 48px;
+        font-size: 44px;
+        animation: ping 1.2s ease-in-out infinite;
       }
 
-      @keyframes detectedPing {
+      @keyframes ping {
         0% {
           transform: scale(0.95);
           box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.6);
         }
         70% {
           transform: scale(1);
-          box-shadow: 0 0 0 20px rgba(34, 197, 94, 0);
+          box-shadow: 0 0 0 18px rgba(34, 197, 94, 0);
         }
         100% {
           transform: scale(0.95);
@@ -274,28 +289,30 @@
         }
       }
 
-      /* ── Bottom Status Panel ── */
-      .status-panel {
+      /* ── Status Panel ── */
+      #status-panel {
         pointer-events: all;
         margin: 0 12px 20px;
-        background: rgba(15, 23, 42, 0.92);
-        backdrop-filter: blur(16px);
-        -webkit-backdrop-filter: blur(16px);
+        background: rgba(10, 15, 30, 0.92);
         border: 1px solid rgba(255, 255, 255, 0.12);
         border-radius: 16px;
         padding: 16px;
-        transform: translateY(120px);
+        transform: translateY(130px);
         opacity: 0;
-        transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+        transition:
+          transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1),
+          opacity 0.3s ease;
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
       }
 
-      .status-panel.active {
+      #status-panel.active {
         transform: translateY(0);
         opacity: 1;
       }
 
-      .panel-product-name {
-        font-size: 17px;
+      #panel-name {
+        font-size: 16px;
         font-weight: 700;
         color: #f1f5f9;
         margin-bottom: 10px;
@@ -304,276 +321,323 @@
         text-overflow: ellipsis;
       }
 
+      .panel-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+      }
+
+      .panel-row-label {
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.45);
+      }
+
+      #panel-status-val {
+        font-size: 14px;
+        font-weight: 700;
+      }
+
       .panel-grid {
         display: grid;
-        grid-template-columns: 1fr 1fr 1fr;
+        grid-template-columns: repeat(3, 1fr);
         gap: 8px;
-        margin-bottom: 10px;
+        margin: 8px 0;
       }
 
       .panel-cell {
-        background: rgba(255, 255, 255, 0.05);
+        background: rgba(255, 255, 255, 0.06);
         border-radius: 8px;
-        padding: 8px 10px;
+        padding: 8px;
         text-align: center;
       }
 
       .panel-cell-label {
         font-size: 10px;
-        color: rgba(255, 255, 255, 0.45);
+        color: rgba(255, 255, 255, 0.4);
         text-transform: uppercase;
         letter-spacing: 0.5px;
         margin-bottom: 4px;
       }
 
-      .panel-cell-value {
+      .panel-cell-val {
         font-size: 15px;
         font-weight: 700;
         color: #f1f5f9;
       }
 
-      .panel-status-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 8px;
+      .bar-bg {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 10px;
+        height: 6px;
+        overflow: hidden;
+        margin-top: 8px;
       }
 
-      .panel-status-label {
-        font-size: 12px;
-        color: rgba(255, 255, 255, 0.5);
+      #panel-bar {
+        height: 100%;
+        border-radius: 10px;
+        width: 0%;
+        transition:
+          width 0.6s ease,
+          background 0.3s ease;
       }
 
-      .panel-status-value {
-        font-size: 14px;
-        font-weight: 700;
-      }
-
-      .panel-status-value.status-fresh {
-        color: #22c55e;
-      }
-      .panel-status-value.status-consume-soon {
-        color: #eab308;
-      }
-      .panel-status-value.status-critical {
-        color: #f97316;
-      }
-      .panel-status-value.status-expired {
-        color: #ef4444;
-      }
-
-      /* Reuse freshness bar from style.css */
-      .panel-freshness-bar {
-        margin-top: 4px;
-      }
-
-      /* Hiro marker hint */
-      .hiro-hint {
+      /* ── Hiro Reference ── */
+      #hiro-hint {
         pointer-events: all;
         position: fixed;
-        bottom: 100px;
-        right: 16px;
-        background: rgba(0, 0, 0, 0.7);
+        bottom: 110px;
+        right: 14px;
+        z-index: 20;
+        background: rgba(0, 0, 0, 0.75);
         border: 1px solid rgba(255, 255, 255, 0.15);
         border-radius: 10px;
-        padding: 8px 12px;
+        padding: 8px 10px;
         display: flex;
         align-items: center;
         gap: 8px;
         backdrop-filter: blur(8px);
-        z-index: 20;
+        -webkit-backdrop-filter: blur(8px);
+        cursor: pointer;
       }
 
-      .hiro-hint img {
-        width: 40px;
-        height: 40px;
+      #hiro-hint img {
+        width: 42px;
+        height: 42px;
         border-radius: 4px;
-        border: 2px solid rgba(255, 255, 255, 0.3);
+        border: 2px solid rgba(255, 255, 255, 0.25);
       }
 
-      .hiro-hint-text {
+      .hiro-text {
         font-size: 11px;
-        color: rgba(255, 255, 255, 0.7);
-        max-width: 120px;
-        line-height: 1.4;
+        color: rgba(255, 255, 255, 0.65);
+        line-height: 1.5;
+        max-width: 110px;
+      }
+
+      /* ── Toast ── */
+      #toast-wrap {
+        position: fixed;
+        bottom: 24px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 50;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        pointer-events: none;
+      }
+
+      .toast {
+        background: rgba(30, 41, 59, 0.95);
+        color: #f1f5f9;
+        padding: 10px 18px;
+        border-radius: 100px;
+        font-size: 13px;
+        font-weight: 500;
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        animation:
+          tIn 0.3s ease,
+          tOut 0.3s ease 2.5s forwards;
+        white-space: nowrap;
+      }
+
+      .toast.ok {
+        border-color: var(--fresh);
+        color: var(--fresh);
+      }
+      .toast.warn {
+        border-color: var(--consume-soon);
+        color: var(--consume-soon);
+      }
+      .toast.err {
+        border-color: var(--expired);
+        color: var(--expired);
+      }
+
+      @keyframes tIn {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      @keyframes tOut {
+        from {
+          opacity: 1;
+        }
+        to {
+          opacity: 0;
+        }
+      }
+
+      /* status colors */
+      .col-fresh {
+        color: var(--fresh);
+      }
+      .col-consume-soon {
+        color: var(--consume-soon);
+      }
+      .col-critical {
+        color: var(--critical);
+      }
+      .col-expired {
+        color: var(--expired);
+      }
+
+      .bar-fresh {
+        background: var(--fresh);
+      }
+      .bar-consume-soon {
+        background: var(--consume-soon);
+      }
+      .bar-critical {
+        background: var(--critical);
+      }
+      .bar-expired {
+        background: var(--expired);
       }
     </style>
   </head>
   <body>
-    <!-- ════════════════════════════════════════
-       A-FRAME AR SCENE
-       ════════════════════════════════════════ -->
+    <!-- ══════════════════════════════════════════
+     A-FRAME AR SCENE
+     CATATAN: Jangan tambahkan atribut apapun
+     ke <a-scene> selain yang ada di bawah.
+     ══════════════════════════════════════════ -->
     <a-scene
-      id="arScene"
       embedded
-      arjs="sourceType: webcam;
-          debugUIEnabled: false;
-          detectionMode: mono_and_matrix;
-          matrixCodeType: 3x3;"
-      renderer="logarithmicDepthBuffer: true; antialias: true;"
+      arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono_and_matrix; matrixCodeType: 3x3;"
       vr-mode-ui="enabled: false"
+      renderer="antialias: true; logarithmicDepthBuffer: true;"
       loading-screen="enabled: false"
+      gesture-detector
     >
-      <!-- Camera -->
+      <!-- Kamera AR -->
       <a-entity camera></a-entity>
 
-      <!-- Hiro Marker — AR.js built-in, most reliable for prototyping -->
-      <a-marker
-        id="arMarker"
-        preset="hiro"
-        raycaster="objects: .clickable"
-        emitevents="true"
-        cursor="fuse: false"
-      >
-        <!-- 3D Object slot (built dynamically by scanner.js) -->
-        <a-entity id="arObject"></a-entity>
-
-        <!-- Text layers (pre-declared, updated dynamically) -->
-        <a-text
-          id="arTextTop"
-          value=""
-          color="#ffffff"
-          align="center"
-          width="2.5"
-          position="0 1.1 0"
-          look-at="[camera]"
-        >
-        </a-text>
-
-        <a-text
-          id="arTextMid"
-          value=""
-          color="#22c55e"
-          align="center"
-          width="2.2"
-          position="0 0.88 0"
-          look-at="[camera]"
-        >
-        </a-text>
-
-        <a-text
-          id="arTextBot"
-          value=""
-          color="#cbd5e1"
-          align="center"
-          width="2.0"
-          position="0 0.7 0"
-          look-at="[camera]"
-        >
-        </a-text>
+      <!-- Marker Hiro (built-in AR.js, paling reliable) -->
+      <a-marker id="ar-marker" preset="hiro" emitevents="true">
+        <!--
+      Semua entity 3D dibangun dinamis oleh scanner.js
+      saat marker terdeteksi. Placeholder kosong di sini.
+    -->
+        <a-entity id="ar-root"></a-entity>
       </a-marker>
     </a-scene>
 
-    <!-- ════════════════════════════════════════
-       SCANNER UI (above AR scene)
-       ════════════════════════════════════════ -->
-
-    <div class="scanner-ui">
+    <!-- ══════════════════════════════════════════
+     UI OVERLAY
+     ══════════════════════════════════════════ -->
+    <div id="ui-overlay">
       <!-- Top Bar -->
-      <div class="scanner-topbar">
-        <a href="index.html" class="btn-back-scanner">← Dashboard</a>
-        <span class="scanner-title">📷 AR Scanner</span>
+      <div id="top-bar">
+        <a href="index.html" id="btn-back">← Dashboard</a>
+        <span id="top-title">📷 AR Scanner</span>
       </div>
 
-      <!-- Product Selector -->
-      <div class="selector-bar">
-        <select id="selectProduct">
-          <option value="">— Pilih produk —</option>
+      <!-- Selector -->
+      <div id="selector-bar">
+        <select id="select-product">
+          <option value="">— Pilih produk untuk di-scan —</option>
         </select>
-        <button
-          class="btn-refresh"
-          id="btnRefreshProducts"
-          title="Refresh daftar"
-        >
-          🔄
-        </button>
+        <button id="btn-refresh">🔄</button>
       </div>
 
-      <!-- Center Overlays -->
-      <div class="overlay-center">
-        <!-- State: Idle (no product selected) -->
-        <div class="overlay-box" id="overlayIdle">
-          <div class="overlay-icon">🧺</div>
-          <div class="overlay-title">Pilih Produk</div>
-          <div class="overlay-sub">
+      <!-- Center overlays -->
+      <div id="center-area">
+        <!-- Idle: belum pilih produk -->
+        <div class="state-panel active" id="state-idle">
+          <div class="state-icon">🧺</div>
+          <div class="state-title">Pilih Produk</div>
+          <div class="state-sub">
             Pilih produk dari dropdown di atas, lalu arahkan kamera ke marker
             Hiro.
           </div>
         </div>
 
-        <!-- State: Scanning (product selected, no marker yet) -->
-        <div class="overlay-box" id="overlayScanning">
-          <div class="reticle">
-            <div class="reticle-inner"></div>
-            <div class="reticle-corners">
-              <span></span><span></span><span></span><span></span>
-            </div>
+        <!-- Scanning: produk dipilih, cari marker -->
+        <div class="state-panel" id="state-scanning">
+          <div id="reticle-box">
+            <div class="corner tl"></div>
+            <div class="corner tr"></div>
+            <div class="corner bl"></div>
+            <div class="corner br"></div>
+            <div class="reticle-pulse"></div>
           </div>
-          <div class="overlay-title">Mencari Marker...</div>
-          <div class="overlay-sub">
-            Arahkan kamera ke marker Hiro di bawah ini.
+          <div class="state-title">Cari Marker...</div>
+          <div class="state-sub">
+            Arahkan ke marker Hiro. Pastikan pencahayaan cukup dan marker tidak
+            buram.
           </div>
         </div>
 
-        <!-- State: Detected -->
-        <div class="overlay-box" id="overlayDetected">
-          <div class="detected-ring">✅</div>
-          <div class="overlay-title">Marker Terdeteksi!</div>
-          <div class="overlay-sub">AR aktif. Jaga marker tetap terlihat.</div>
+        <!-- Detected: marker ditemukan -->
+        <div class="state-panel" id="state-detected">
+          <div id="detected-ring">✅</div>
+          <div class="state-title">Marker Terdeteksi!</div>
+          <div class="state-sub">
+            AR aktif. Jaga marker tetap terlihat oleh kamera.
+          </div>
         </div>
       </div>
 
-      <!-- Bottom Status Panel (slide up when marker detected) -->
-      <div class="status-panel" id="statusPanel">
-        <div class="panel-product-name" id="panelName">—</div>
-
-        <div class="panel-status-row">
-          <span class="panel-status-label">Status Kesegaran</span>
-          <span class="panel-status-value" id="panelStatus">—</span>
+      <!-- Status Panel (muncul dari bawah) -->
+      <div id="status-panel">
+        <div id="panel-name">—</div>
+        <div class="panel-row">
+          <span class="panel-row-label">Status</span>
+          <span id="panel-status-val">—</span>
         </div>
-
         <div class="panel-grid">
           <div class="panel-cell">
             <div class="panel-cell-label">Sisa</div>
-            <div class="panel-cell-value" id="panelSisa">—</div>
+            <div class="panel-cell-val" id="panel-sisa">—</div>
           </div>
           <div class="panel-cell">
             <div class="panel-cell-label">Umur</div>
-            <div class="panel-cell-value" id="panelUmur">—</div>
+            <div class="panel-cell-val" id="panel-umur">—</div>
           </div>
           <div class="panel-cell">
             <div class="panel-cell-label">Terpakai</div>
-            <div class="panel-cell-value" id="panelPersen">—</div>
+            <div class="panel-cell-val" id="panel-persen">—</div>
           </div>
         </div>
-
-        <div class="panel-freshness-bar">
-          <div class="freshness-bar-bg">
-            <div
-              class="freshness-bar-fill fresh"
-              id="panelBar"
-              style="width: 0%"
-            ></div>
-          </div>
+        <div class="bar-bg">
+          <div id="panel-bar"></div>
         </div>
       </div>
     </div>
 
-    <!-- Hiro Marker Reference Card (bottom-right corner) -->
-    <div class="hiro-hint" id="hiroHint">
+    <!-- Hiro Marker Reference -->
+    <div
+      id="hiro-hint"
+      onclick="
+        window.open(
+          'https://raw.githack.com/AR-js-org/AR.js/master/data/images/hiro.png',
+          '_blank',
+        )
+      "
+    >
       <img
-        src="https://raw.githack.com/jeromeetienne/AR.js/master/data/images/hiro.png"
+        src="https://raw.githack.com/AR-js-org/AR.js/master/data/images/hiro.png"
         alt="Hiro Marker"
-        id="hiroImg"
+        onerror="this.style.display = 'none'"
       />
-      <div class="hiro-hint-text">
-        Marker Hiro<br />
-        <strong>Download & cetak</strong> ini untuk di-scan
+      <div class="hiro-text">
+        <strong>Marker Hiro</strong><br />
+        Ketuk untuk download & cetak
       </div>
     </div>
 
-    <!-- Toast -->
-    <div class="toast-container" id="toastContainer"></div>
+    <!-- Toast container -->
+    <div id="toast-wrap"></div>
 
     <!-- Scripts -->
     <script src="js/storage.js"></script>

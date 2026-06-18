@@ -1,313 +1,287 @@
 /**
- * scanner.js
- * AR Scanner controller.
- *
- * Flow:
- * 1. User memilih produk yang ingin di-scan dari dropdown.
- * 2. User arahkan kamera ke Hiro marker.
- * 3. AR.js mendeteksi marker.
- * 4. Scanner mengambil data produk dari Storage.
- * 5. Menghitung status kesegaran via Expiry.
- * 6. Merender objek 3D + teks info di atas marker.
+ * scanner.js — AR Scanner controller
+ * Compatible dengan A-Frame 1.4.2 + AR.js 2.2.2
  */
 
-const Scanner = (() => {
-  // ─── Config ────────────────────────────────────────────────────
-  const STATUS_COLORS = {
+(function () {
+  "use strict";
+
+  // ── Config ──────────────────────────────────────────────────────
+  const COLOR = {
     fresh: "#22c55e",
     "consume-soon": "#eab308",
     critical: "#f97316",
     expired: "#ef4444",
   };
 
-  // AR Object geometry per status
-  const STATUS_GEOMETRY = {
-    fresh: {primitive: "box", attrs: "width:0.6; height:0.6; depth:0.6;"},
-    "consume-soon": {primitive: "cylinder", attrs: "radius:0.35; height:0.7;"},
-    critical: {
-      primitive: "cone",
-      attrs: "radiusBottom:0.4; radiusTop:0; height:0.75;",
+  const GEOMETRY = {
+    fresh: {tag: "a-box", extra: {width: "0.6", height: "0.6", depth: "0.6"}},
+    "consume-soon": {
+      tag: "a-cylinder",
+      extra: {radius: "0.32", height: "0.65"},
     },
-    expired: {primitive: "sphere", attrs: "radius:0.38;"},
+    critical: {
+      tag: "a-cone",
+      extra: {"radius-bottom": "0.38", "radius-top": "0", height: "0.72"},
+    },
+    expired: {tag: "a-sphere", extra: {radius: "0.35"}},
   };
 
-  // ─── State ─────────────────────────────────────────────────────
-  let currentProduct = null;
-  let currentInfo = null;
-  let isMarkerVisible = false;
-  let animFrame = null;
+  const EMOJI = {
+    fresh: "✅",
+    "consume-soon": "⚠️",
+    critical: "🚨",
+    expired: "💀",
+  };
 
-  // ─── DOM Refs (set on init) ─────────────────────────────────────
-  let arScene, markerEl, arObject, arTextTop, arTextMid, arTextBot;
-  let selectProduct, btnRefresh, statusPanel;
-  let panelName, panelStatus, panelSisa, panelUmur, panelPersen;
-  let overlayIdle, overlayScanning, overlayDetected;
-  let toastContainer;
+  // ── State ────────────────────────────────────────────────────────
+  let selectedProduct = null;
+  let selectedInfo = null;
+  let markerVisible = false;
 
-  // ─── Init ──────────────────────────────────────────────────────
-  function init() {
-    // DOM bindings
-    arScene = document.getElementById("arScene");
-    markerEl = document.getElementById("arMarker");
-    arObject = document.getElementById("arObject");
-    arTextTop = document.getElementById("arTextTop");
-    arTextMid = document.getElementById("arTextMid");
-    arTextBot = document.getElementById("arTextBot");
-    selectProduct = document.getElementById("selectProduct");
-    btnRefresh = document.getElementById("btnRefreshProducts");
-    statusPanel = document.getElementById("statusPanel");
-    panelName = document.getElementById("panelName");
-    panelStatus = document.getElementById("panelStatus");
-    panelSisa = document.getElementById("panelSisa");
-    panelUmur = document.getElementById("panelUmur");
-    panelPersen = document.getElementById("panelPersen");
-    overlayIdle = document.getElementById("overlayIdle");
-    overlayScanning = document.getElementById("overlayScanning");
-    overlayDetected = document.getElementById("overlayDetected");
-    toastContainer = document.getElementById("toastContainer");
+  // ── DOM helpers ──────────────────────────────────────────────────
+  const $ = (id) => document.getElementById(id);
+  const el = (tag) => document.createElement(tag);
 
-    populateProductSelector();
-    bindEvents();
-    setOverlay("idle");
+  // ── Wait for A-Frame to be ready ────────────────────────────────
+  function waitForAFrame(cb) {
+    const scene = $("ar-marker") ? document.querySelector("a-scene") : null;
+    if (!scene) {
+      // A-Frame not yet parsed — wait
+      setTimeout(() => waitForAFrame(cb), 100);
+      return;
+    }
+    if (scene.hasLoaded) {
+      cb();
+    } else {
+      scene.addEventListener("loaded", cb, {once: true});
+    }
   }
 
-  // ─── Product Selector ──────────────────────────────────────────
-  function populateProductSelector() {
+  // ── Bootstrap ────────────────────────────────────────────────────
+  document.addEventListener("DOMContentLoaded", function () {
+    populateSelector();
+    bindUI();
+
+    // Wait for A-Frame scene + AR.js marker element before binding AR events
+    waitForAFrame(bindAREvents);
+  });
+
+  // ── Populate product dropdown ────────────────────────────────────
+  function populateSelector() {
+    const sel = $("select-product");
     const products = Storage.getAll();
-    selectProduct.innerHTML =
-      '<option value="">— Pilih produk untuk di-scan —</option>';
+
+    // Reset
+    sel.innerHTML = '<option value="">— Pilih produk untuk di-scan —</option>';
 
     if (products.length === 0) {
-      selectProduct.innerHTML +=
-        "<option disabled>Belum ada produk. Tambah di Dashboard.</option>";
+      sel.innerHTML +=
+        '<option value="" disabled>Belum ada produk. Tambah di Dashboard.</option>';
       return;
     }
 
-    products.forEach((p) => {
+    products.forEach(function (p) {
       const info = Expiry.calculate(p);
-      const option = document.createElement("option");
-      option.value = p.markerId;
-      option.textContent = `${info.emoji} ${p.namaProduk} (${p.markerId})`;
-      selectProduct.appendChild(option);
+      const opt = el("option");
+      opt.value = p.markerId;
+      opt.textContent = `${info.emoji} ${p.namaProduk} (${p.markerId})`;
+      sel.appendChild(opt);
     });
   }
 
-  // ─── Events ────────────────────────────────────────────────────
-  function bindEvents() {
-    // Product selection change
-    selectProduct.addEventListener("change", () => {
-      const id = selectProduct.value;
+  // ── UI Events ────────────────────────────────────────────────────
+  function bindUI() {
+    $("select-product").addEventListener("change", function () {
+      const id = this.value;
+
       if (!id) {
-        currentProduct = null;
-        currentInfo = null;
-        clearARObjects();
-        setOverlay("idle");
-        statusPanel.classList.remove("active");
+        selectedProduct = null;
+        selectedInfo = null;
+        clearAR();
+        setState("idle");
+        $("status-panel").classList.remove("active");
         return;
       }
-      currentProduct = Storage.getById(id);
-      if (!currentProduct) {
-        showToast("Data produk tidak ditemukan", "error");
+
+      selectedProduct = Storage.getById(id);
+      if (!selectedProduct) {
+        toast("Data produk tidak ditemukan", "err");
         return;
       }
-      currentInfo = Expiry.calculate(currentProduct);
-      setOverlay("scanning");
-      showToast(`Arahkan ke marker ${id}`, "success");
+      selectedInfo = Expiry.calculate(selectedProduct);
+      setState("scanning");
+      toast(`Siap scan ${id} — arahkan ke Hiro marker`, "ok");
     });
 
-    // Refresh product list
-    btnRefresh.addEventListener("click", () => {
-      populateProductSelector();
-      showToast("Daftar produk diperbarui", "success");
+    $("btn-refresh").addEventListener("click", function () {
+      populateSelector();
+      toast("Daftar diperbarui", "ok");
     });
-
-    // AR.js marker found
-    markerEl.addEventListener("markerFound", onMarkerFound);
-
-    // AR.js marker lost
-    markerEl.addEventListener("markerLost", onMarkerLost);
   }
 
-  // ─── Marker Found ──────────────────────────────────────────────
-  function onMarkerFound() {
-    isMarkerVisible = true;
+  // ── AR Events ────────────────────────────────────────────────────
+  function bindAREvents() {
+    const marker = document.getElementById("ar-marker");
 
-    if (!currentProduct || !currentInfo) {
-      // Marker detected but no product selected
-      setOverlay("scanning");
-      showToast("Pilih produk terlebih dahulu", "warning");
+    if (!marker) {
+      console.warn("[Scanner] ar-marker element not found");
       return;
     }
 
-    setOverlay("detected");
-    renderARObjects(currentProduct, currentInfo);
-    renderStatusPanel(currentProduct, currentInfo);
-    statusPanel.classList.add("active");
+    marker.addEventListener("markerFound", function () {
+      markerVisible = true;
 
-    // Start pulse animation loop
-    startPulseAnimation();
-  }
+      if (!selectedProduct) {
+        toast("Pilih produk dulu dari dropdown", "warn");
+        setState("scanning");
+        return;
+      }
 
-  // ─── Marker Lost ───────────────────────────────────────────────
-  function onMarkerLost() {
-    isMarkerVisible = false;
-    stopPulseAnimation();
-
-    if (currentProduct) {
-      setOverlay("scanning");
-      statusPanel.classList.remove("active");
-    } else {
-      setOverlay("idle");
-    }
-  }
-
-  // ─── Render 3D Objects ─────────────────────────────────────────
-  function renderARObjects(product, info) {
-    const color = STATUS_COLORS[info.status] || "#ffffff";
-    const geom = STATUS_GEOMETRY[info.status] || STATUS_GEOMETRY["fresh"];
-
-    // Remove existing object and rebuild with correct geometry
-    const existing = document.getElementById("arObject");
-    if (existing) existing.remove();
-
-    const entity = document.createElement("a-entity");
-    entity.id = "arObject";
-
-    // Main 3D shape
-    const shape = document.createElement("a-" + geom.primitive);
-
-    // Parse and set geometry attrs
-    geom.attrs.split(";").forEach((attr) => {
-      const [key, val] = attr.split(":");
-      if (key && val) shape.setAttribute(key.trim(), val.trim());
+      setState("detected");
+      renderAR(selectedProduct, selectedInfo);
+      renderPanel(selectedProduct, selectedInfo);
+      $("status-panel").classList.add("active");
     });
 
-    shape.setAttribute("color", color);
-    shape.setAttribute("opacity", "0.92");
-    shape.setAttribute("position", "0 0.4 0");
-    shape.setAttribute(
-      "animation",
-      `
-      property: rotation;
-      to: 0 360 0;
-      loop: true;
-      dur: 3000;
-      easing: linear
-    `,
-    );
+    marker.addEventListener("markerLost", function () {
+      markerVisible = false;
 
-    // Emission glow
+      $("status-panel").classList.remove("active");
+
+      if (selectedProduct) {
+        setState("scanning");
+      } else {
+        setState("idle");
+      }
+    });
+  }
+
+  // ── Render AR Objects ────────────────────────────────────────────
+  function renderAR(product, info) {
+    clearAR();
+
+    const root = $("ar-root");
+    const color = COLOR[info.status] || "#ffffff";
+    const geom = GEOMETRY[info.status] || GEOMETRY["fresh"];
+
+    // ── 3D Shape ──
+    const shape = document.createElement(geom.tag);
+
+    // Geometry attributes
+    Object.entries(geom.extra).forEach(function ([k, v]) {
+      shape.setAttribute(k, v);
+    });
+
+    // Position: center above marker
+    shape.setAttribute("position", "0 0.42 0");
+
+    // Material with emissive glow
     shape.setAttribute(
       "material",
-      `
-      color: ${color};
-      emissive: ${color};
-      emissiveIntensity: 0.3;
-      opacity: 0.92;
-      transparent: true
-    `,
+      "color: " +
+        color +
+        "; " +
+        "emissive: " +
+        color +
+        "; " +
+        "emissiveIntensity: 0.25; " +
+        "opacity: 0.92; " +
+        "transparent: true",
     );
 
-    entity.appendChild(shape);
-    markerEl.appendChild(entity);
+    // Rotation animation
+    shape.setAttribute(
+      "animation",
+      "property: rotation; " +
+        "to: 0 360 0; " +
+        "loop: true; " +
+        "dur: 3000; " +
+        "easing: linear",
+    );
 
-    // Top text: Product name
-    arTextTop.setAttribute("value", product.namaProduk);
-    arTextTop.setAttribute("color", "#ffffff");
-    arTextTop.setAttribute("position", "0 1.1 0");
-    arTextTop.setAttribute("align", "center");
-    arTextTop.setAttribute("width", "2.5");
+    shape.setAttribute("id", "ar-shape");
+    root.appendChild(shape);
 
-    // Mid text: Status label
-    arTextMid.setAttribute("value", `● ${info.label.toUpperCase()}`);
-    arTextMid.setAttribute("color", color);
-    arTextMid.setAttribute("position", "0 0.88 0");
-    arTextMid.setAttribute("align", "center");
-    arTextMid.setAttribute("width", "2.2");
+    // ── Text: Product Name ──
+    var tName = document.createElement("a-text");
+    tName.setAttribute("value", product.namaProduk);
+    tName.setAttribute("color", "#ffffff");
+    tName.setAttribute("align", "center");
+    tName.setAttribute("width", "2.4");
+    tName.setAttribute("position", "0 1.05 0");
+    tName.setAttribute("look-at", "[camera]");
+    tName.setAttribute("id", "ar-text-name");
+    root.appendChild(tName);
 
-    // Bottom text: Remaining days
-    const sisaText =
-      info.sisaHari > 0 ? `Sisa ${info.sisaHari} hari` : "KADALUARSA";
-    arTextBot.setAttribute("value", sisaText);
-    arTextBot.setAttribute("color", info.sisaHari > 0 ? "#cbd5e1" : "#ef4444");
-    arTextBot.setAttribute("position", "0 0.7 0");
-    arTextBot.setAttribute("align", "center");
-    arTextBot.setAttribute("width", "2.0");
+    // ── Text: Status ──
+    var tStatus = document.createElement("a-text");
+    tStatus.setAttribute("value", "● " + info.label.toUpperCase());
+    tStatus.setAttribute("color", color);
+    tStatus.setAttribute("align", "center");
+    tStatus.setAttribute("width", "2.1");
+    tStatus.setAttribute("position", "0 0.84 0");
+    tStatus.setAttribute("look-at", "[camera]");
+    tStatus.setAttribute("id", "ar-text-status");
+    root.appendChild(tStatus);
+
+    // ── Text: Days remaining ──
+    var sisaText =
+      info.sisaHari > 0 ? "Sisa " + info.sisaHari + " hari" : "⚠ KADALUARSA";
+    var tSisa = document.createElement("a-text");
+    tSisa.setAttribute("value", sisaText);
+    tSisa.setAttribute("color", info.sisaHari > 0 ? "#94a3b8" : "#ef4444");
+    tSisa.setAttribute("align", "center");
+    tSisa.setAttribute("width", "1.9");
+    tSisa.setAttribute("position", "0 0.67 0");
+    tSisa.setAttribute("look-at", "[camera]");
+    tSisa.setAttribute("id", "ar-text-sisa");
+    root.appendChild(tSisa);
   }
 
-  // ─── Clear 3D Objects ─────────────────────────────────────────
-  function clearARObjects() {
-    const obj = document.getElementById("arObject");
-    if (obj) obj.remove();
-    ["arTextTop", "arTextMid", "arTextBot"].forEach((id) => {
-      const el = document.getElementById(id);
-      if (el) el.setAttribute("value", "");
+  // ── Clear all AR children ────────────────────────────────────────
+  function clearAR() {
+    var root = $("ar-root");
+    if (!root) return;
+    while (root.firstChild) {
+      root.removeChild(root.firstChild);
+    }
+  }
+
+  // ── Render bottom status panel ───────────────────────────────────
+  function renderPanel(product, info) {
+    $("panel-name").textContent = product.namaProduk;
+
+    var statusEl = $("panel-status-val");
+    statusEl.textContent = EMOJI[info.status] + " " + info.label;
+    statusEl.className = "col-" + info.status;
+
+    $("panel-sisa").textContent =
+      info.sisaHari > 0 ? info.sisaHari + "h" : "Exp";
+    $("panel-umur").textContent = info.umurProduk + "h";
+    $("panel-persen").textContent = info.persentase + "%";
+
+    var bar = $("panel-bar");
+    bar.style.width = Math.min(100, info.barWidth) + "%";
+    bar.className = "bar-" + info.status;
+  }
+
+  // ── Overlay state machine ────────────────────────────────────────
+  function setState(state) {
+    ["idle", "scanning", "detected"].forEach(function (s) {
+      var el = $("state-" + s);
+      if (el) el.classList.toggle("active", s === state);
     });
   }
 
-  // ─── Status Panel ─────────────────────────────────────────────
-  function renderStatusPanel(product, info) {
-    panelName.textContent = product.namaProduk;
-
-    panelStatus.textContent = `${info.emoji} ${info.label}`;
-    panelStatus.className = `panel-status-value status-${info.status}`;
-
-    panelSisa.textContent =
-      info.sisaHari > 0 ? `${info.sisaHari} hari` : "Kadaluarsa";
-    panelUmur.textContent = `${info.umurProduk} hari`;
-    panelPersen.textContent = `${info.persentase}%`;
-
-    // Update freshness bar
-    const bar = document.getElementById("panelBar");
-    if (bar) {
-      bar.style.width = `${Math.min(100, info.barWidth)}%`;
-      bar.className = `freshness-bar-fill ${info.status}`;
-    }
+  // ── Toast ────────────────────────────────────────────────────────
+  function toast(msg, type) {
+    var t = el("div");
+    t.className = "toast " + (type || "ok");
+    t.textContent = msg;
+    $("toast-wrap").appendChild(t);
+    setTimeout(function () {
+      t.remove();
+    }, 3000);
   }
-
-  // ─── Overlay State ────────────────────────────────────────────
-  function setOverlay(state) {
-    overlayIdle.style.display = state === "idle" ? "flex" : "none";
-    overlayScanning.style.display = state === "scanning" ? "flex" : "none";
-    overlayDetected.style.display = state === "detected" ? "flex" : "none";
-  }
-
-  // ─── Pulse Animation ──────────────────────────────────────────
-  function startPulseAnimation() {
-    stopPulseAnimation();
-    let t = 0;
-    function tick() {
-      t += 0.04;
-      const obj = document.getElementById("arObject");
-      if (obj && isMarkerVisible) {
-        const scale = 1 + 0.05 * Math.sin(t);
-        const child = obj.querySelector(
-          "a-" + (STATUS_GEOMETRY[currentInfo?.status]?.primitive || "box"),
-        );
-        if (child) child.setAttribute("scale", `${scale} ${scale} ${scale}`);
-      }
-      animFrame = requestAnimationFrame(tick);
-    }
-    animFrame = requestAnimationFrame(tick);
-  }
-
-  function stopPulseAnimation() {
-    if (animFrame) cancelAnimationFrame(animFrame);
-    animFrame = null;
-  }
-
-  // ─── Toast ────────────────────────────────────────────────────
-  function showToast(message, type = "success") {
-    const toast = document.createElement("div");
-    toast.className = `toast ${type}`;
-    toast.textContent = message;
-    toastContainer.appendChild(toast);
-    setTimeout(() => toast.remove(), 3000);
-  }
-
-  // ─── Public API ───────────────────────────────────────────────
-  return {init};
 })();
-
-// Boot after DOM ready
-document.addEventListener("DOMContentLoaded", Scanner.init);
